@@ -13,7 +13,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 using namespace Eigen;
-const int N = 100;
+const int N = 1000;
 
 struct line{
   Vector3d org;
@@ -46,27 +46,27 @@ double BSDF(Vector3d x, Vector3d wi, Vector3d wo);
 
 int main(int argc, char const *argv[]) {
   /* code */
-  MatrixXd input = MatrixXd::Zero(100,100);
+  MatrixXd input = MatrixXd::Zero(50,50);
   struct plane eye, lens, light;
-  eye.point << 0.0, 0.0, 5.0;
+  eye.point << 5.0, 0.0, 0.0;
   eye.area << 0.1, 0.1;
-  eye.normal << 0.0, 0.0, -1.0;
-  lens.point << 0.0, 0.0, 3.0;
+  eye.normal = -eye.point.normalized();
+  lens.point << 3.0, 0.0, 0.0;
   lens.area << 1.0, 1.0;
-  lens.normal << 0.0, 0.0, -1.0;
-  light.point << 3.0, 4.0, 0.0;
+  lens.normal = -lens.point.normalized();
+  light.point << 0.0, 4.0, 3.0;
   light.area << 1.0, 1.0;
-  light.normal << -0.6, -0.8, 0.0;
+  light.normal = -light.point.normalized();
   input = Pathtracing(input, eye, lens, light);
-  //std::cout << "input\n" << input << std::endl;
+  std::cout << "input\n" << input << std::endl;
 
 
 
   double* data = new double[input.cols()*input.rows()];
-  cv::Mat img(input.cols(), input.cols(), CV_64FC1, data);
+  cv::Mat img(input.cols(), input.rows(), CV_64FC1, data);
   for (int i = 0; i < input.rows(); i++) {
     for (int j = 0; j < input.cols(); j++) {
-      data[i * input.cols() + j] =input(i,j);
+      data[i * input.cols() + j] = 1000 * input(i,j);
     }
   }
   //std::cout << "img\n" << img << std::endl;
@@ -87,13 +87,12 @@ MatrixXd Pathtracing(
   std::mt19937 mt(rnd());
   std::uniform_real_distribution<double> point(0.0, 1.0);
 
-  Vector3d xp = eye.point;
-  Vector3d x0 = lens.point;
+  Vector3d xp, x0;
   Vector3d x, tangent;
-  tangent.x() = - eye.normal.z() / sqrt(eye.normal.x() * eye.normal.x() + eye.normal.z() * eye.normal.z());
+  tangent.x() = eye.normal.z() / sqrt(eye.normal.x() * eye.normal.x() + eye.normal.z() * eye.normal.z());
   tangent.y() = 0;
-  tangent.z() = eye.normal.x() / sqrt(eye.normal.x() * eye.normal.x() + eye.normal.z() * eye.normal.z());
-  Vector3d binormal = tangent.cross(eye.normal);
+  tangent.z() = - eye.normal.x() / sqrt(eye.normal.x() * eye.normal.x() + eye.normal.z() * eye.normal.z());
+  Vector3d binormal = eye.normal.cross(tangent);
   struct line ray = { Vector3d::Zero(), Vector3d::Zero() };
   //オブジェクトの設定
   struct plane horizontal = { Vector3d::Zero(), Vector3d::Zero(),  Vector2d::Zero()};
@@ -102,68 +101,64 @@ MatrixXd Pathtracing(
   horizontal.area << 1.0, 1.0;
   struct sphere unitsphere = { Vector3d::Zero(), 1.0 };
 
-  Vector3d raynormal, wo, wi, normal;
+  Vector3d raynormal, wo, wi;
 
-  double t = 0, tplane, tsphere1, tsphere2, tlight;
+  double t = 0.0, tplane, tsphere, tlight;
   int paramflag;
 
   for (int  i = 0; i < N;  i++) {
     for (int j = 0; j < input.rows(); j++){
       for(int k = 0; k < input.cols(); k++){
-        xp = eye.point + ((j + point(mt)) / input.cols() - 0.5) * eye.area.x() * tangent
-              + ((k + point(mt)) / input.rows() - 0.5) * eye.area.y() * binormal;
+        xp = eye.point + ((k + point(mt)) / input.cols() - 0.5) * eye.area.x() * tangent
+              + ((j + point(mt)) / input.rows() - 0.5) * eye.area.y() * binormal;
 
-        double paxp = 1 / (eye.area.x() * eye.area.y());
+        double paxp = input.cols() * input.rows() / (eye.area.x() * eye.area.y());
 
         /*レンズの一点をサンプリング*/
-        x0 = lens.point + ((j + point(mt)) / input.cols() - 0.5) * lens.area.x() * tangent
-              + ((k + point(mt)) / input.rows() - 0.5) * lens.area.y() * binormal;
-        double pax0 = 1.0;
+        x0 = lens.point + ((k + point(mt)) / input.cols() - 0.5) * lens.area.x() * tangent
+              + ((j + point(mt)) / input.rows() - 0.5) * lens.area.y() * binormal;
+        double pax0 = input.cols() * input.rows() / (lens.area.x() * lens.area.y());
 
         ray.org = x0;
         ray.dir = (x0 - xp).normalized();
-        double pasigma = 1.0 / 2.0 * PI;
-        double alpha = ray.dir.dot(eye.normal) / pax0 * pasigma;/*重みづけ未考慮*/
+        double psigma = 1.0 / 2.0 * PI;
+        double alpha = ray.dir.dot(eye.normal) / pax0 * psigma;/*重みづけ未考慮*/
+        //std::cout << "start" << std::endl;
 
-        tplane = (horizontal.point- ray.org).dot(horizontal.normal) / ray.dir.dot(horizontal.normal);
-        tlight = (light.point - ray.org).dot(light.normal) / ray.dir.dot(light.normal);
-        tsphere1 = (-(ray.org - unitsphere.center).dot(ray.dir)
-                    + ray.dir.norm() * sqrt(pow((ray.org - unitsphere.center).norm(), 2)  - unitsphere.radius * unitsphere.radius))
-                  / ray.dir.dot(ray.dir);
-        tsphere2 = (-(ray.org - unitsphere.center).dot(ray.dir)
-          - ray.dir.norm() * sqrt(pow((ray.org - unitsphere.center).norm(), 2) - unitsphere.radius * unitsphere.radius))
-          / ray.dir.dot(ray.dir);
 
-        tplane = 1.0 / tplane;
-        tlight = 1.0 / tlight;
-        tsphere1 = 1.0 / tsphere1;
-        tsphere2 = 1.0 / tsphere2;
+        do{//ray をトレースして衝突がある
+          tplane = (horizontal.point - ray.org).dot(horizontal.normal) / ray.dir.dot(horizontal.normal);
+          tlight = (light.point - ray.org).dot(light.normal) / ray.dir.dot(light.normal);
+          tsphere = (-(ray.org - unitsphere.center).dot(ray.dir) - ray.dir.norm() * unitsphere.radius) / ray.dir.dot(ray.dir);
 
-        t = 0;
 
-        if (tlight < tplane){
-          if (tplane < tsphere1){
-            if(tsphere1 < tsphere2) {
-              t = tsphere2;
-              normal = x;
+          tplane = 1.0 / tplane;
+          tlight = 1.0 / tlight;
+          tsphere = 1.0 / tsphere;
+
+          if (tlight < tplane) {
+            if (tplane < tsphere) {
+              t = tsphere;
               paramflag = 2;
-            }else {
-              t = tsphere1;
-              normal = x;
-              paramflag = 1;
             }
-          }else {
-            t = tplane;
-            normal = horizontal.normal;
-            paramflag = 0;
+            else {
+              t = tplane;
+              paramflag = 0;
+            }
           }
-        } else {
-          paramflag = 3;
-        }
-        t = fmax(t, 0);
+          else if (tlight < tsphere) {
+            t = tsphere;
+            paramflag = 2;
+          }
+          else {
+            t = tlight;
+            paramflag = 3;
+          }
+          t = fmax(t, 0);
 
+          //std::cout <<  t << std::endl;
+          if (t <= 0) break;
 
-        while(t > 0){//ray をトレースして衝突がある
           x = ray.org + ray.dir / t ;
           wo = -ray.dir;
           switch (paramflag) {
@@ -172,68 +167,42 @@ MatrixXd Pathtracing(
               break;
             case 1:
             case 2:
-              raynormal = x;
+              raynormal = x - unitsphere.center;
               break;
             case 3:
               input(j, k) = input(j, k) + alpha * Le(x, wo);
+              //std::cout << input(j, k) << std::endl;
               break;
           }
-          if(paramflag == 3) break;
+          if (paramflag == 3) {
+            //std::cout << "end1" << std::endl;
+            break;
+          }
           wi << point(mt), point(mt), point(mt);
+          while (wi.dot(raynormal) < 0) {
+            wi << point(mt), point(mt), point(mt);
+          }
           wi = wi / wi.norm();
 
           double psigmawi = 1.0;
 
-          alpha = alpha * BSDF(x, wi, wo) * wi.dot(normal) / psigmawi;
+          alpha = alpha * BSDF(x, wi, wo) * wi.dot(raynormal) / psigmawi;
 
           double prr = 0.5;
 
           if(point(mt) > prr){
+            //std::cout << "end2" << std::endl;
             break;
           }
           ray.org = x;
           ray.dir = wi;
 
           alpha = alpha / prr;
-
-
-          tplane = -ray.org.dot(horizontal.normal) / ray.dir.dot(horizontal.normal);
-          tlight = -ray.org.dot(light.normal) / ray.dir.dot(light.normal);
-          tsphere1 = (-(ray.org - unitsphere.center).dot(ray.dir)
-                      + ray.dir.norm() * sqrt(pow((ray.org - unitsphere.center).norm(), 2)  - unitsphere.radius * unitsphere.radius))
-                    / ray.dir.dot(ray.dir);
-          tsphere2 = (-(ray.org - unitsphere.center).dot(ray.dir)
-            - ray.dir.norm() * sqrt(pow((ray.org - unitsphere.center).norm(), 2) - unitsphere.radius * unitsphere.radius))
-            / ray.dir.dot(ray.dir);
-
-          tplane = 1 / tplane;
-          tlight = 1 / tlight;
-          tsphere1 = 1 / tsphere1;
-          tsphere2 = 1 / tsphere2;
-
-          if (tlight < tplane){
-            if (tplane < tsphere1){
-              if(tsphere1 < tsphere2) {
-                t = tsphere2;
-                paramflag = 2;
-              }else {
-                t = tsphere1;
-                paramflag = 1;
-              }
-            }else {
-              t = tplane;
-              paramflag = 0;
-            }
-          } else {
-            paramflag = 3;
-          }
-          t = fmax(t, 0);
-
-          //input(1,1) = 1;
-        }
+       } while (t > 0.0);
       }
     }
   }
+
   return input / (double)N;
 }
 
