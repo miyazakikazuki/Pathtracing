@@ -10,7 +10,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 using namespace Eigen;
-const int N = 500;
+const int N = 1000;
 
 struct line{
   Vector3d org;
@@ -43,12 +43,12 @@ double BSDF(Vector3d x, Vector3d wi, Vector3d wo);
 
 int main(int argc, char const *argv[]) {
   /* code */
-  MatrixXd input = MatrixXd::Zero(100,100);
+  MatrixXd input = MatrixXd::Zero(200,200);
   struct plane eye, lens, light;
   eye.point << 5.0, 0.0, 0.0;
   eye.area << 0.1, 0.1;
   eye.normal = -eye.point.normalized();
-  lens.point << 3.0, 0.0, 0.0;
+  lens.point << 3.2, 0.0, 0.0;
   lens.area << 1.0, 1.0;
   lens.normal = -lens.point.normalized();
   light.point << 0.0, 4.0, 3.0;
@@ -61,7 +61,7 @@ int main(int argc, char const *argv[]) {
   cv::Mat img(input.cols(), input.rows(), CV_64FC1, data);
   for (int i = 0; i < input.rows(); i++) {
     for (int j = 0; j < input.cols(); j++) {
-      data[i * input.cols() + j] = input(i,j);
+      data[i * input.cols() + j] = input(input.cols() - i - 1,input.rows() - j);
     }
   }
   //std::cout << "img\n" << img << std::endl;
