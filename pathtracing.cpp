@@ -10,7 +10,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 using namespace Eigen;
-const int N = 1000;
+const int N = 10;
 
 struct line{
   Vector3d org;
@@ -28,6 +28,11 @@ struct sphere {
   double radius;
 };
 
+struct collisiondetection {
+	double t;
+	int paramflag;
+};
+
 MatrixXd Pathtracing(
   MatrixXd input,
   struct plane eye,
@@ -41,9 +46,11 @@ double BSDF(Vector3d x, Vector3d wi, Vector3d wo);
 
 
 
+
+
 int main(int argc, char const *argv[]) {
   /* code */
-  MatrixXd input = MatrixXd::Zero(200,200);
+  MatrixXd input = MatrixXd::Zero(100,100);
   struct plane eye, lens, light;
   eye.point << 5.0, 0.0, 0.0;
   eye.area << 0.1, 0.1;
@@ -89,6 +96,7 @@ MatrixXd Pathtracing(
   tangent.z() = - eye.normal.x() / sqrt(eye.normal.x() * eye.normal.x() + eye.normal.z() * eye.normal.z());
   Vector3d binormal = eye.normal.cross(tangent);
   struct line ray = { Vector3d::Zero(), Vector3d::Zero() };
+  struct line shadowray = { Vector3d::Zero(), Vector3d::Zero() };
   //オブジェクトの設定
   struct plane horizontal = { Vector3d::Zero(), Vector3d::Zero(),  Vector2d::Zero()};
   horizontal.point << 0.0, -1.0, 0.0;
@@ -97,9 +105,9 @@ MatrixXd Pathtracing(
   struct sphere unitsphere = { Vector3d::Zero(), 1.0 };
   double A, B, C, D;
 
-  Vector3d raynormal, wo, wi;
+  Vector3d raynormal, wo, wi, xl;
 
-  double t = 0.0, tplane, tsphere, tlight;
+  double t = 0.0, tplane, tsphere, tlight,paxp,pax0,paxl;
   int paramflag;
 
   for (int  i = 0; i < N;  i++) {
@@ -108,12 +116,12 @@ MatrixXd Pathtracing(
         xp = eye.point + ((k + point(mt)) / input.cols() - 0.5) * eye.area.x() * tangent
               + ((j + point(mt)) / input.rows() - 0.5) * eye.area.y() * binormal;
 
-        double paxp = input.cols() * input.rows() / (eye.area.x() * eye.area.y());
+         paxp = input.cols() * input.rows() / (eye.area.x() * eye.area.y());
 
         /*レンズの一点をサンプリング*/
         x0 = lens.point + ((k + point(mt)) / input.cols() - 0.5) * lens.area.x() * tangent
               + ((j + point(mt)) / input.rows() - 0.5) * lens.area.y() * binormal;
-        double pax0 = input.cols() * input.rows() / (lens.area.x() * lens.area.y());
+        pax0 = input.cols() * input.rows() / (lens.area.x() * lens.area.y());
 
         ray.org = x0;
         ray.dir = (x0 - xp).normalized();
@@ -123,12 +131,13 @@ MatrixXd Pathtracing(
 
 
         do{//ray をトレースして衝突がある
+		  t = 0;
           tplane = (horizontal.point - ray.org).dot(horizontal.normal) / ray.dir.dot(horizontal.normal);
           //if ((ray.org + tplane * ray.dir - horizontal.point).norm() > 5.0) {
           //  tplane = -1.0;
           //}
           tlight = (light.point - ray.org).dot(light.normal) / ray.dir.dot(light.normal);
-          if ((ray.org + tlight * ray.dir - light.point).norm() > 10.0) {
+          if ((ray.org + tlight * ray.dir - light.point).norm() > 1.0) {
             tlight = -1.0;
           }
 
@@ -199,6 +208,21 @@ MatrixXd Pathtracing(
 
           double psigmawi = 1.0;
 
+		  xl = light.point + ((k + point(mt)) / input.cols() - 0.5) * light.area.x() * tangent
+			  + ((j + point(mt)) / input.rows() - 0.5) * light.area.y() * binormal;
+
+		  paxl = 1.0;
+
+		  shadowray.org = x;
+
+		  shadowray.dir = (xl - x).normalized();
+
+		  if ((xl - x).dot(raynormal) > 0) {
+
+			  input(j, k) = input(j, k) + alpha * Le(xl, x) * BSDF(x, wi, wo) / paxl;
+
+		  }
+
           alpha = alpha * BSDF(x, wi, wo) * wi.dot(raynormal) / psigmawi;
 
           double prr = 0.5;
@@ -214,7 +238,7 @@ MatrixXd Pathtracing(
        } while (t > 0.0);
       }
     }
-    std::cout << "loading..." << (double)i / (double)N * 100.0 << "%" << std::endl;
+    std::cout << "loading..." << (double)(i + 1) / (double)N * 100.0 << "%" << std::endl;
   }
 
   return input / (double)N;
