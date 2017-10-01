@@ -28,10 +28,25 @@ struct sphere {
   double radius;
 };
 
-struct collisiondetection {
+struct forCollision {
 	double t;
-	int paramflag;
+	int flag;
 };
+
+class Material{
+private:
+	int num;
+public:
+	void addPlane(plane p);
+	void addSphere(sphere s);
+	forCollision calcCollison();
+};
+
+class Plane {
+
+};
+
+
 
 MatrixXd Pathtracing(
   MatrixXd input,
